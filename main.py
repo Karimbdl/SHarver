@@ -27,18 +27,18 @@ class HarvesterApp(QWidget):
     def __init__(self):
         super().__init__()
 
-        # Configuration de la fenêtre
+       
         self.setWindowTitle("Seahawks Harvester")
         self.setGeometry(100, 100, 600, 400)
 
-        # Layout
+        
         self.layout = QVBoxLayout()
 
-        # Détection IP locale et sous-réseau
+       
         self.local_ip = self.get_local_ip()
         self.subnet = self.get_subnet()
 
-        # Affichage de l'IP et du nom de la machine
+        
         self.local_ip_label = QLabel(f"IP locale: {self.local_ip}")
         self.hostname_label = QLabel(f"Nom de la machine: {socket.gethostname()}")
         self.subnet_label = QLabel(f"Plage scannée : {self.subnet}")
@@ -47,17 +47,17 @@ class HarvesterApp(QWidget):
         self.layout.addWidget(self.hostname_label)
         self.layout.addWidget(self.subnet_label)
 
-        # Bouton pour lancer le scan réseau
+       
         self.scan_button = QPushButton("Lancer le scan réseau")
         self.scan_button.clicked.connect(self.start_scan)
         self.layout.addWidget(self.scan_button)
 
-        # Zone d'affichage des résultats de scan
+        
         self.scan_results = QTextEdit()
         self.scan_results.setReadOnly(True)
         self.layout.addWidget(self.scan_results)
 
-        # Affichage de la latence WAN
+       
         self.latency_label = QLabel("Latence WAN: N/A")
         self.layout.addWidget(self.latency_label)
 
@@ -82,16 +82,16 @@ class HarvesterApp(QWidget):
     def get_subnet(self):
         """ Déduit automatiquement le sous-réseau de l'IP locale """
         if self.local_ip == '0.0.0.0':
-            return '192.168.1.0/24'  # Valeur par défaut
+            return '192.168.1.0/24'  
         ip_parts = self.local_ip.split('.')
-        return f"{ip_parts[0]}.{ip_parts[1]}.{ip_parts[2]}.0/24"  # Exemple: 192.168.1.0/24
+        return f"{ip_parts[0]}.{ip_parts[1]}.{ip_parts[2]}.0/24"  
 
     def start_scan(self):
         """ Démarre un scan réseau dans un thread séparé """
         self.status_label.setText("Scan en cours...")
-        self.scan_button.setEnabled(False)  # Désactive le bouton pendant le scan
+        self.scan_button.setEnabled(False)  
 
-        # Démarre le thread de scan avec le bon sous-réseau
+        
         self.scan_thread = ScanThread(self.subnet)
         self.scan_thread.scan_finished.connect(self.display_scan_results)
         self.scan_thread.start()
@@ -110,19 +110,19 @@ class HarvesterApp(QWidget):
                         result_text += f"  └ Port {port}: {state}\n"
             self.scan_results.setText(result_text)
         
-        self.check_latency()  # Mesure de la latence WAN
+        self.check_latency()  
         self.scan_button.setEnabled(True)
 
     def check_latency(self):
         """ Mesure la latence WAN avec un ping vers un serveur externe """
         try:
-            # Windows: -n 4 | Linux/Mac: -c 4
+            
             ping_option = "-n" if sys.platform == "win32" else "-c"
             ping_result = subprocess.run(
                 ['ping', ping_option, '4', '8.8.8.8'],
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True
             )
-            # Extraction de la latence moyenne
+           
             output = ping_result.stdout
             latency = self.extract_latency(output)
             self.latency_label.setText(f"Latence WAN: {latency} ms")
