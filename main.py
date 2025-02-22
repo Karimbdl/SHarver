@@ -1,7 +1,6 @@
 import sys
 import socket
 import nmap
-import subprocess
 import json
 import os
 import csv
@@ -15,6 +14,7 @@ class ScanThread(QThread):
     def __init__(self, subnet):
         super().__init__()
         self.subnet = subnet
+        self._is_running = True  # Flag pour contrôler l'exécution du thread
 
     def run(self):
         """ Exécute le scan réseau """
@@ -24,10 +24,14 @@ class ScanThread(QThread):
             
             results = {}
             for host in nm.all_hosts():
+                if not self._is_running:  # Vérifier si le thread doit s'arrêter
+                    return
                 results[host] = []  # Ajout de l'hôte sans ports ouverts
                 
             nm.scan(hosts=self.subnet, arguments='-p 1-65535 -T4')
             for host in nm.all_hosts():
+                if not self._is_running:  # Vérifier si le thread doit s'arrêter
+                    return
                 if 'tcp' in nm[host]:
                     for port, details in nm[host]['tcp'].items():
                         if details['state'] == 'open':
@@ -42,6 +46,10 @@ class ScanThread(QThread):
             error_message = f"Erreur lors du scan : {str(e)}"
             print(error_message)  # Afficher l'erreur en console
             self.scan_finished.emit({'error': error_message})
+
+    def stop(self):
+        """ Arrête proprement le thread """
+        self._is_running = False  # Définir le flag pour arrêter le thread
 
 class HarvesterApp(QWidget):
     def __init__(self):
@@ -220,8 +228,8 @@ class HarvesterApp(QWidget):
 
     def stop_scan(self):
         """ Arrête le scan en cours """
-        if self.scan_thread.isRunning():
-            self.scan_thread.terminate()
+        if hasattr(self, 'scan_thread') and self.scan_thread.isRunning():
+            self.scan_thread.stop()  # Appeler la méthode stop() du thread
             self.status_label.setText("Scan interrompu.")
             self.scan_button.setEnabled(True)
             self.stop_scan_button.setEnabled(False)
