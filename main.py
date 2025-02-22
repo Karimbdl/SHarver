@@ -20,18 +20,14 @@ class ScanThread(QThread):
         """ Exécute le scan réseau """
         try:
             nm = nmap.PortScanner()
-            nm.scan(hosts=self.subnet, arguments='-sn')
+            # Scan combiné pour détecter les hôtes et les ports ouverts en une seule passe
+            nm.scan(hosts=self.subnet, arguments='-T5 -p 1-1024')  # Limiter la plage de ports pour accélérer le scan
             
             results = {}
             for host in nm.all_hosts():
                 if not self._is_running:  # Vérifier si le thread doit s'arrêter
                     return
-                results[host] = []  # Ajout de l'hôte sans ports ouverts
-                
-            nm.scan(hosts=self.subnet, arguments='-p 1-65535 -T4')
-            for host in nm.all_hosts():
-                if not self._is_running:  # Vérifier si le thread doit s'arrêter
-                    return
+                results[host] = []
                 if 'tcp' in nm[host]:
                     for port, details in nm[host]['tcp'].items():
                         if details['state'] == 'open':
