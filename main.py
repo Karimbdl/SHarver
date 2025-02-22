@@ -14,18 +14,18 @@ class ScanThread(QThread):
     def __init__(self, subnet):
         super().__init__()
         self.subnet = subnet
-        self._is_running = True  # Flag pour contrôler l'exécution du thread
+        self._is_running = True  
 
     def run(self):
         """ Exécute le scan réseau """
         try:
             nm = nmap.PortScanner()
-            # Scan combiné pour détecter les hôtes et les ports ouverts en une seule passe
-            nm.scan(hosts=self.subnet, arguments='-T5 -p 1-1024')  # Limiter la plage de ports pour accélérer le scan
+            
+            nm.scan(hosts=self.subnet, arguments='-T5 -p 1-1024')  
             
             results = {}
             for host in nm.all_hosts():
-                if not self._is_running:  # Vérifier si le thread doit s'arrêter
+                if not self._is_running: 
                     return
                 results[host] = []
                 if 'tcp' in nm[host]:
@@ -40,12 +40,12 @@ class ScanThread(QThread):
             self.scan_finished.emit({'error': "Permission refusée. Nmap nécessite des permissions élevées (sudo)."})
         except Exception as e:
             error_message = f"Erreur lors du scan : {str(e)}"
-            print(error_message)  # Afficher l'erreur en console
+            print(error_message) 
             self.scan_finished.emit({'error': error_message})
 
     def stop(self):
         """ Arrête proprement le thread """
-        self._is_running = False  # Définir le flag pour arrêter le thread
+        self._is_running = False  
 
 class HarvesterApp(QWidget):
     def __init__(self):
@@ -84,25 +84,25 @@ class HarvesterApp(QWidget):
         self.machines_count_label = QLabel("Nombre de machines détectées: 0")
         self.layout.addWidget(self.machines_count_label)
 
-        # Export options
+        
         self.export_button = QPushButton("Exporter les résultats")
         self.export_button.clicked.connect(self.export_scan_results)
         self.layout.addWidget(self.export_button)
 
-        # Mode sombre / mode clair
+        
         self.mode_combo = QComboBox()
         self.mode_combo.addItem("Mode Clair")
         self.mode_combo.addItem("Mode Sombre")
         self.mode_combo.currentIndexChanged.connect(self.toggle_mode)
         self.layout.addWidget(self.mode_combo)
 
-        # Barre de progression
+        
         self.progress_bar = QProgressBar(self)
         self.progress_bar.setRange(0, 0)  # Mode indéterminé
         self.layout.addWidget(self.progress_bar)
         self.progress_bar.setVisible(False)  # Initialement invisible
 
-        # Bouton d'arrêt du scan
+        
         self.stop_scan_button = QPushButton("Arrêter le scan")
         self.stop_scan_button.clicked.connect(self.stop_scan)
         self.layout.addWidget(self.stop_scan_button)
@@ -110,12 +110,12 @@ class HarvesterApp(QWidget):
 
         self.setLayout(self.layout)
 
-        # Scan programmé
+      
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.start_scan)  # Recommence le scan à intervalles réguliers
         self.timer.start(3600000)  # Scan automatique toutes les heures (3600000 ms)
 
-        # Logging setup
+        
         self.setup_logging()
 
     def get_local_ip(self):
@@ -141,8 +141,8 @@ class HarvesterApp(QWidget):
         """ Démarre un scan réseau dans un thread séparé """
         self.status_label.setText("Scan en cours...")
         self.scan_button.setEnabled(False)
-        self.stop_scan_button.setEnabled(True)  # Active le bouton d'arrêt
-        self.progress_bar.setVisible(True)  # Active la barre de progression
+        self.stop_scan_button.setEnabled(True)  
+        self.progress_bar.setVisible(True)  
         
         self.scan_thread = ScanThread(self.subnet)
         self.scan_thread.scan_finished.connect(self.display_scan_results)
@@ -167,7 +167,7 @@ class HarvesterApp(QWidget):
             self.machines_count_label.setText(f"Nombre de machines détectées: {machine_count}")
             self.scan_results.setText(result_text)
 
-            # Enregistrer les résultats dans un fichier JSON
+            
             self.save_scan_results(scan_result)
             self.log_scan(scan_result)
         
@@ -217,15 +217,15 @@ class HarvesterApp(QWidget):
 
     def toggle_mode(self, index):
         """ Change le mode de l'interface entre sombre et clair """
-        if index == 0:  # Mode clair
+        if index == 0:  
             self.setStyleSheet("background-color: white; color: black;")
-        else:  # Mode sombre
+        else:  
             self.setStyleSheet("background-color: #2E2E2E; color: white;")
 
     def stop_scan(self):
         """ Arrête le scan en cours """
         if hasattr(self, 'scan_thread') and self.scan_thread.isRunning():
-            self.scan_thread.stop()  # Appeler la méthode stop() du thread
+            self.scan_thread.stop()  
             self.status_label.setText("Scan interrompu.")
             self.scan_button.setEnabled(True)
             self.stop_scan_button.setEnabled(False)
@@ -233,7 +233,6 @@ class HarvesterApp(QWidget):
 
     def check_for_updates(self):
         """ Vérifie les mises à jour de l'application via un dépôt GitLab """
-        # Implémenter la logique de récupération des informations de version depuis GitLab
         pass
 
 if __name__ == '__main__':
