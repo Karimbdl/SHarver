@@ -4,6 +4,7 @@ import nmap
 import json
 import os
 import csv
+import requests  # Ajout de la bibliothèque requests pour les requêtes HTTP
 from PyQt5.QtCore import QThread, pyqtSignal, QTimer
 from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QLabel, QPushButton, QTextEdit, QFileDialog, QComboBox, QProgressBar
 
@@ -84,25 +85,21 @@ class HarvesterApp(QWidget):
         self.machines_count_label = QLabel("Nombre de machines détectées: 0")
         self.layout.addWidget(self.machines_count_label)
 
-        
         self.export_button = QPushButton("Exporter les résultats")
         self.export_button.clicked.connect(self.export_scan_results)
         self.layout.addWidget(self.export_button)
 
-        
         self.mode_combo = QComboBox()
         self.mode_combo.addItem("Mode Clair")
         self.mode_combo.addItem("Mode Sombre")
         self.mode_combo.currentIndexChanged.connect(self.toggle_mode)
         self.layout.addWidget(self.mode_combo)
 
-        
         self.progress_bar = QProgressBar(self)
         self.progress_bar.setRange(0, 0)  # Mode indéterminé
         self.layout.addWidget(self.progress_bar)
         self.progress_bar.setVisible(False)  # Initialement invisible
 
-        
         self.stop_scan_button = QPushButton("Arrêter le scan")
         self.stop_scan_button.clicked.connect(self.stop_scan)
         self.layout.addWidget(self.stop_scan_button)
@@ -110,12 +107,10 @@ class HarvesterApp(QWidget):
 
         self.setLayout(self.layout)
 
-      
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.start_scan)  # Recommence le scan à intervalles réguliers
         self.timer.start(3600000)  # Scan automatique toutes les heures (3600000 ms)
 
-        
         self.setup_logging()
 
     def get_local_ip(self):
@@ -167,11 +162,33 @@ class HarvesterApp(QWidget):
             self.machines_count_label.setText(f"Nombre de machines détectées: {machine_count}")
             self.scan_results.setText(result_text)
 
-            
+            # Enregistrer les résultats dans un fichier JSON
             self.save_scan_results(scan_result)
             self.log_scan(scan_result)
+
+            # Envoyer les données au Nester
+            ip_address = self.local_ip
+            hostname = socket.gethostname()
+            self.send_data_to_nester(ip_address, hostname, scan_result)
         
         self.scan_button.setEnabled(True)
+
+    def send_data_to_nester(self, ip_address, hostname, last_scan):
+        """
+        Envoie les données du scan au serveur Nester via l'API REST.
+        """
+        url = "http://127.0.0.1:5000/api/sonde"  # URL de l'API du Nester
+        data = {
+            "ip_address": ip_address,
+            "hostname": hostname,
+            "last_scan": json.dumps(last_scan)  # Convertit les résultats du scan en JSON
+        }
+        try:
+            response = requests.post(url, json=data)
+            response.raise_for_status()  # Vérifie si la requête a réussi
+            print("Données envoyées avec succès au Nester :", response.json())
+        except requests.exceptions.RequestException as e:
+            print("Erreur lors de l'envoi des données au Nester :", e)
 
     def save_scan_results(self, scan_result):
         """ Enregistre les résultats du scan dans un fichier JSON """
