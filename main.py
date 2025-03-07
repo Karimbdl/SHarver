@@ -5,8 +5,11 @@ import json
 import os
 import csv
 import requests
-from PyQt5.QtCore import QThread, pyqtSignal, QTimer
+import subprocess  # Import pour la commande ping
+from PyQt5.QtCore import QThread, pyqtSignal, QTimer, Qt
 from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QLabel, QPushButton, QTextEdit, QFileDialog, QComboBox, QProgressBar, QGridLayout, QHBoxLayout, QTableWidget, QTableWidgetItem, QHeaderView, QLineEdit
+from PyQt5.QtGui import QIcon  # Import pour les icônes
+
 
 class ScanThread(QThread):
     """ Thread pour exécuter le scan réseau avec options """
@@ -15,47 +18,96 @@ class ScanThread(QThread):
     def __init__(self, subnet, scan_type, port_range):
         super().__init__()
         self.subnet = subnet
-        self.scan_type = scan_type  # Type de scan (ex: '-T5')
-        self.port_range = port_range # Plage de ports (ex: '1-1024')
+        self.scan_type = scan_type  
+        self.port_range = port_range 
         self._is_running = True
 
     def run(self):
         """ Exécute le scan réseau avec les options spécifiées """
         try:
             nm = nmap.PortScanner()
-            arguments = f"{self.scan_type} -p {self.port_range}" # Combine scan type and port range
+            arguments = f"{self.scan_type} -p {self.port_range}" 
             nm.scan(hosts=self.subnet, arguments=arguments)
 
             results = {}
             for host in nm.all_hosts():
                 if not self._is_running:
                     return
-                results[host] = []
+                results[host] = {}  
+                results[host]['ports'] = [] 
                 if 'tcp' in nm[host]:
                     for port, details in nm[host]['tcp'].items():
                         if details['state'] == 'open':
-                            results[host].append(port)
+                            results[host]['ports'].append(port)
+                
+                lan_latency = self.get_ping_latency(host) 
+                results[host]['lan_latency'] = lan_latency 
+                print(f"DEBUG: ScanThread.run() - Scan results for host {host}: {results[host]}") 
 
             self.scan_finished.emit(results)
         except nmap.PortScannerError as e:
-            self.scan_finished.emit({'error': "Nmap error: " + str(e)})
+            error_msg = f"Nmap error: {str(e)}"
+            print(f"DEBUG: ScanThread.run() - NmapError: {error_msg}") # DEBUG
+            self.scan_finished.emit({'error': error_msg})
         except PermissionError as e:
-            self.scan_finished.emit({'error': "Permission error: " + str(e)})
+            error_msg = f"Permission error: {str(e)}"
+            print(f"DEBUG: ScanThread.run() - PermissionError: {error_msg}") # DEBUG
+            self.scan_finished.emit({'error': error_msg})
         except Exception as e:
             error_message = f"Scan error: {str(e)}"
-            print(error_message)
+            print(f"DEBUG: ScanThread.run() - Generic Exception: {error_message}") # DEBUG
+            print(f"DEBUG: ScanThread.run() - Exception details: {e}") # DEBUG - Print exception details
             self.scan_finished.emit({'error': error_message})
 
     def stop(self):
         """ Arrête proprement le thread """
         self._is_running = False
 
+    def get_ping_latency(self, host):
+        """ Mesure la latence ping vers un hôte spécifié - VERSION AMÉLIORÉE DU PARSING"""
+        print(f"DEBUG: get_ping_latency() - Pinging host: {host}") 
+        try:
+            process = subprocess.Popen(["ping", "-n", "1", "-w", "1000", host], 
+                                     stdout=subprocess.PIPE,
+                                     stderr=subprocess.PIPE)
+            stdout, stderr = process.communicate()
+
+            print(f"DEBUG: get_ping_latency() - Ping return code: {process.returncode}") 
+            if process.returncode == 0:
+                output = stdout.decode('cp1252', errors='ignore') 
+                print(f"DEBUG: get_ping_latency() - Ping stdout: {output}") 
+
+               
+                import re  
+                match = re.search(r"temps[=<]?([\d.,]+)\s*ms", output, re.IGNORECASE) 
+                if match:
+                    latency_str = match.group(1).replace(",", ".") 
+                    try:
+                        latency = float(latency_str) 
+                        latency_ms = f"{latency:.2f} ms"
+                        print(f"DEBUG: get_ping_latency() - Latency parsed (REGEX): {latency_ms}") 
+                        return latency_ms
+                    except ValueError as ve:
+                        print(f"DEBUG: get_ping_latency() - ValueError parsing latency (REGEX): {ve}") 
+                        return "N/A"
+                else:
+                    print(f"DEBUG: get_ping_latency() - No latency value found in ping output (REGEX)") 
+                    return "N/A"
+            else:
+                error_output = stderr.decode('utf-8', errors='ignore') 
+                print(f"DEBUG: get_ping_latency() - Ping failed (return code != 0). Stderr: {error_output}") 
+                return "N/A" 
+        except Exception as e:
+            print(f"DEBUG: get_ping_latency() - Exception during ping execution: {e}") 
+            return "N/A" 
+
 class HarvesterApp(QWidget):
     def __init__(self):
         super().__init__()
 
         self.setWindowTitle("Seahawks Harvester - Cyberpunk Edition")
-        self.setGeometry(100, 100, 800, 600) # Fenêtre plus large
+        self.setGeometry(100, 100, 900, 700) # Wider and taller window
+        self.setWindowIcon(QIcon('icons/seahawks_logo.png')) # Application icon
 
         self.layout = QVBoxLayout()
         self.setLayout(self.layout)
@@ -106,14 +158,15 @@ class HarvesterApp(QWidget):
 
 
         # Bouton de scan
-        self.scan_button = QPushButton("Lancer le Scan Réseau")
+        self.scan_button = QPushButton("Lancer le Scan")
+        self.scan_button.setIcon(QIcon('icons/scan_icon.png')) # Scan icon
         self.scan_button.clicked.connect(self.start_scan)
         self.layout.addWidget(self.scan_button)
 
         # Tableau de résultats (remplace QTextEdit)
         self.scan_results_table = QTableWidget()
-        self.scan_results_table.setColumnCount(3) # Hôte, IP, Ports Ouverts
-        self.scan_results_table.setHorizontalHeaderLabels(["Hôte", "Adresse IP", "Ports Ouverts"])
+        self.scan_results_table.setColumnCount(4) # Hôte, IP, Ports Ouverts, Latency LAN
+        self.scan_results_table.setHorizontalHeaderLabels(["Hôte", "Adresse IP", "Ports Ouverts", "Latence LAN (Ping)"]) # ENLEVE WAN
         self.scan_results_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch) # Colonnes étirées
         self.layout.addWidget(self.scan_results_table)
 
@@ -122,7 +175,7 @@ class HarvesterApp(QWidget):
         self.layout.addLayout(bottom_layout)
 
         self.status_label = QLabel("Prêt pour le scan...")
-        self.version_label = QLabel("v1.0.0 Cyberpunk")
+        self.version_label = QLabel("v1.0.1 Cyberpunk")
         bottom_layout.addWidget(self.status_label)
         bottom_layout.addWidget(self.version_label)
         bottom_layout.addStretch() # Pousse la version à droite
@@ -133,21 +186,25 @@ class HarvesterApp(QWidget):
         self.progress_bar.setVisible(False)
         self.layout.addWidget(self.progress_bar)
 
-        # Bouton stop (sous la barre de progression, désactivé au début)
-        self.stop_scan_button = QPushButton("Arrêter le Scan")
+        # Boutons stop et exporter (sous la barre de progression, désactivé au début)
+        buttons_layout = QHBoxLayout() # Layout horizontal pour les boutons stop et export
+        self.layout.addLayout(buttons_layout)
+
+        self.stop_scan_button = QPushButton("Arrêter")
+        self.stop_scan_button.setIcon(QIcon('icons/stop_icon.png')) # Stop icon
         self.stop_scan_button.clicked.connect(self.stop_scan)
         self.stop_scan_button.setEnabled(False)
-        self.layout.addWidget(self.stop_scan_button)
+        buttons_layout.addWidget(self.stop_scan_button)
 
-        # Bouton exporter (sous le bouton stop)
-        self.export_button = QPushButton("Exporter les Résultats")
+        self.export_button = QPushButton("Exporter")
+        self.export_button.setIcon(QIcon('icons/export_icon.png')) # Export icon
         self.export_button.clicked.connect(self.export_scan_results)
-        self.layout.addWidget(self.export_button)
+        buttons_layout.addWidget(self.export_button)
 
         # Combo mode (en bas à droite)
         self.mode_combo = QComboBox()
-        self.mode_combo.addItem("Mode Clair")
-        self.mode_combo.addItem("Mode Sombre Cyberpunk")
+        self.mode_combo.addItem(QIcon('icons/light_mode_icon.png'), "Mode Clair") # Light mode icon
+        self.mode_combo.addItem(QIcon('icons/dark_mode_icon.png'), "Mode Sombre Cyberpunk") # Dark mode icon
         self.mode_combo.currentIndexChanged.connect(self.toggle_mode)
         bottom_layout.addWidget(self.mode_combo)
 
@@ -157,89 +214,84 @@ class HarvesterApp(QWidget):
 
 
     def setup_styles(self):
-        """ Applique le style cyberpunk à l'interface PyQt5 """
+        """ Applique le style cyberpunk moins agressif à l'interface PyQt5 """
         cyberpunk_style = """
             QWidget {
-                background-color: #111;
-                color: #eee;
+                background-color: #222; /* Fond plus clair */
+                color: #ddd; /* Texte gris plus clair */
                 font-family: 'Roboto Mono', monospace;
                 font-size: 14px;
             }
             QLabel {
-                color: #00FFFF; /* Cyan pour les labels */
-                text-shadow: 0 0 5px rgba(0, 255, 255, 0.8);
+                color: #66FFFF; /* Cyan moins intense pour les labels */
+                text-shadow: 0 0 3px rgba(0, 255, 255, 0.5); /* Glow moins fort */
             }
             QLineEdit, QComboBox {
-                background-color: #333;
+                background-color: #444; /* Inputs/ComboBox plus clairs */
                 color: #eee;
-                border: 1px solid #555;
+                border: 1px solid #666; /* Bordure moins contrastée */
                 border-radius: 3px;
                 padding: 5px;
-                selection-background-color: #00FFFF;
-                selection-color: #111;
+                selection-background-color: #66FFFF; /* Sélection moins intense */
+                selection-color: #222;
             }
             QLineEdit:focus, QComboBox:focus {
-                border-color: #00FFFF;
-                /* box-shadow: 0 0 5px rgba(0, 255, 255, 0.5);  Retiré box-shadow */
+                border-color: #66FFFF;
             }
             QPushButton {
-                background-color: #00FFFF; /* Boutons cyan */
-                color: #111;
-                border: 2px solid transparent;
+                background-color: #66FFFF; /* Boutons cyan moins intense */
+                color: #222;
+                border: 1px solid #66FFFF; /* Bordure cyan */
                 border-radius: 5px;
                 padding: 8px 20px;
                 font-weight: bold;
                 text-transform: uppercase;
-                /* box-shadow: 0 0 8px rgba(0, 255, 255, 0.5); Retiré box-shadow */
+                transition: background-color 0.3s, color 0.3s, border-color 0.3s; /* Transition plus douce */
             }
             QPushButton:hover {
-                background-color: #111;
-                color: #00FFFF;
-                border-color: #00FFFF;
-                /* box-shadow: 0 0 15px rgba(0, 255, 255, 0.8); Retiré box-shadow */
+                background-color: #222;
+                color: #66FFFF;
+                border-color: #66FFFF;
             }
             QPushButton:disabled {
-                background-color: #555;
-                color: #888;
-                border-color: transparent;
-                /* box-shadow: none; Retiré box-shadow */
+                background-color: #666;
+                color: #999;
+                border-color: #666;
             }
             QProgressBar {
-                border: 2px solid #00FFFF;
+                border: 1px solid #66FFFF; /* Bordure moins épaisse */
                 border-radius: 5px;
                 text-align: center;
                 color: #eee;
-                background-color: #222;
+                background-color: #333; /* Fond plus clair */
             }
             QProgressBar::chunk {
-                background-color: #00FFFF;
+                background-color: #66FFFF; /* Chunk moins intense */
             }
             QTableWidget {
-                background-color: #222;
+                background-color: #333; /* Fond plus clair */
                 color: #eee;
-                border: 1px solid #00FFFF;
+                border: 1px solid #66FFFF; /* Bordure moins épaisse */
                 border-radius: 5px;
             }
             QHeaderView::section {
-                background-color: #333;
-                color: #00FFFF;
+                background-color: #444; /* Header moins sombre */
+                color: #66FFFF; /* Header cyan moins intense */
                 padding: 4px;
-                border: 1px solid #555;
+                border: 1px solid #666; /* Bordure moins contrastée */
             }
             QTableWidget::item {
                 padding: 5px;
             }
             QTableWidget::item:selected {
-                background-color: #00FFFF;
-                color: #111;
+                background-color: #66FFFF; /* Sélection moins intense */
+                color: #222;
             }
-
         """
         self.setStyleSheet(cyberpunk_style)
 
 
     def get_local_ip(self):
-        # ... (méthode get_local_ip inchangée) ...
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         try:
             s.connect(('8.8.8.8', 1))
@@ -251,7 +303,6 @@ class HarvesterApp(QWidget):
         return ip
 
     def get_subnet(self):
-        # ... (méthode get_subnet inchangée) ...
         if self.local_ip == '0.0.0.0':
             return '192.168.1.0/24'
         ip_parts = self.local_ip.split('.')
@@ -259,10 +310,11 @@ class HarvesterApp(QWidget):
 
     def start_scan(self):
         """ Démarre le scan avec les options choisies """
-        self.status_label.setText("Scan en cours...")
+        self.status_label.setText("Scan en cours...") # Feedback dans la status label
         self.scan_button.setEnabled(False)
         self.stop_scan_button.setEnabled(True)
         self.progress_bar.setVisible(True)
+        self.progress_bar.setFormat("Scanning...") # Indique "Scanning..." pendant le scan
         self.scan_results_table.clearContents() # Vide le tableau précédent
         self.scan_results_table.setRowCount(0) # Reset le nombre de lignes
 
@@ -276,19 +328,25 @@ class HarvesterApp(QWidget):
     def display_scan_results(self, scan_result):
         """ Affiche les résultats dans le tableau et envoie au serveur """
         self.progress_bar.setVisible(False)
+        self.progress_bar.setFormat("") # Reset format de la progress bar
         self.stop_scan_button.setEnabled(False)
         if 'error' in scan_result:
-            self.status_label.setText("Erreur de scan.")
+            self.status_label.setText(f"Erreur de scan: {scan_result['error']}") # Erreur dans status label
             # Afficher l'erreur dans une ligne du tableau (ou une popup, plus pro)
             self.scan_results_table.setRowCount(1)
             self.scan_results_table.setItem(0, 0, QTableWidgetItem("Erreur"))
             self.scan_results_table.setItem(0, 1, QTableWidgetItem(scan_result['error']))
+            self.scan_results_table.setItem(0, 2, QTableWidgetItem(" ")) # Empty port column
+            self.scan_results_table.setItem(0, 3, QTableWidgetItem(" ")) # Empty latency column
+
 
         else:
             self.status_label.setText("Scan terminé. Résultats affichés.")
             row_index = 0
             machine_count = 0
-            for host, ports in scan_result.items():
+            for host, data in scan_result.items(): # Iterate through data dict
+                ports = data.get('ports', []) # Get ports, default to empty list
+                lan_latency = data.get('lan_latency', 'N/A') # Get LAN latency, default to 'N/A'
                 self.scan_results_table.insertRow(row_index)
                 hostname = "Nom inconnu"  # Nom par défaut en cas d'échec
                 if host != '127.0.0.1': # Ne pas tenter la résolution pour localhost (inutile)
@@ -303,6 +361,7 @@ class HarvesterApp(QWidget):
                 self.scan_results_table.setItem(row_index, 1, QTableWidgetItem(host)) # IP
                 ports_str = ", ".join(map(str, ports)) if ports else "Aucun port ouvert"
                 self.scan_results_table.setItem(row_index, 2, QTableWidgetItem(ports_str)) # Ports
+                self.scan_results_table.setItem(row_index, 3, QTableWidgetItem(lan_latency)) # Latency LAN
                 row_index += 1
                 machine_count += 1
 
@@ -316,9 +375,10 @@ class HarvesterApp(QWidget):
             self.send_data_to_nester(ip_address, hostname, scan_result)
 
         self.scan_button.setEnabled(True)
+        self.status_label.setText(self.status_label.text() + " Données exportées.") # Confirmation export
 
-    def send_data_to_nester(self, ip_address, hostname, last_scan):
-        # ... (méthode send_data_to_nester inchangée) ...
+
+    def send_data_to_nester(self, ip_address, hostname, last_scan): # <---- CORRECTED DEFINITION - Accepts arguments
         url = "http://127.0.0.1:5000/api/sonde"
         data = {
             "ip_address": ip_address,
@@ -327,13 +387,13 @@ class HarvesterApp(QWidget):
         }
         try:
             response = requests.post(url, json=data)
-            response.raise_for_status()
-            print("Données envoyées au Nester:", response.json())
+            response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
+            print("Data sent to Nester successfully:", response.json())
         except requests.exceptions.RequestException as e:
-            print("Erreur envoi Nester:", e)
+            print(f"Failed to send data to Nester: {e}")
+
 
     def save_scan_results(self, scan_result):
-        # ... (méthode save_scan_results inchangée) ...
         filename = "scan_results.json"
         if os.path.exists(filename):
             with open(filename, 'r') as f:
@@ -345,7 +405,6 @@ class HarvesterApp(QWidget):
             json.dump(all_results, f, indent=4)
 
     def export_scan_results(self):
-        # ... (méthode export_scan_results inchangée, mais adapter pour le tableau si besoin) ...
         options = QFileDialog.Options()
         file_path, _ = QFileDialog.getSaveFileName(self, "Exporter résultats", "", "Text Files (*.txt);;CSV Files (*.csv)", options=options)
 
@@ -353,33 +412,33 @@ class HarvesterApp(QWidget):
             if file_path.endswith('.csv'):
                 with open(file_path, 'w', newline='') as f:
                     writer = csv.writer(f)
-                    writer.writerow(['Host', 'IP Address', 'Open Ports'])
+                    writer.writerow(['Host', 'IP Address', 'Open Ports', 'Latency LAN']) # ENLEVE WAN
                     for row in range(self.scan_results_table.rowCount()):
                         host = self.scan_results_table.item(row, 0).text()
                         ip = self.scan_results_table.item(row, 1).text()
                         ports = self.scan_results_table.item(row, 2).text()
-                        writer.writerow([host, ip, ports])
+                        lan_latency = self.scan_results_table.item(row, 3).text() # Get latency from table
+                        writer.writerow([host, ip, ports, lan_latency]) # Write latency to CSV
             else: # Pour .txt, exporter le contenu du tableau (plus propre que QTextEdit)
                 with open(file_path, 'w') as f:
                     f.write("Scan Results:\n\n")
-                    f.write("Host\t\tIP Address\t\tOpen Ports\n") # En-tête texte
-                    f.write("-" * 50 + "\n")
+                    f.write("Host\t\tIP Address\t\tOpen Ports\t\tLatency LAN (Ping)\n") # En-tête texte ENLEVE WAN
+                    f.write("-" * 80 + "\n") # Wider separator
                     for row in range(self.scan_results_table.rowCount()):
                         host = self.scan_results_table.item(row, 0).text()
                         ip = self.scan_results_table.item(row, 1).text()
                         ports = self.scan_results_table.item(row, 2).text()
-                        f.write(f"{host}\t\t{ip}\t\t{ports}\n")
+                        lan_latency = self.scan_results_table.item(row, 3).text() # Get latency from table
+                        f.write(f"{host}\t\t{ip}\t\t{ports}\t\t{lan_latency}\n")
 
 
     def setup_logging(self):
-        # ... (méthode setup_logging inchangée) ...
         self.log_file = "harvester.log"
         if not os.path.exists(self.log_file):
             with open(self.log_file, 'w') as f:
                 f.write("### Seahawks Harvester Logs ###\n")
 
     def log_scan(self, scan_result):
-        # ... (méthode log_scan inchangée) ...
         with open(self.log_file, 'a') as f:
             f.write(f"\nScan result: {scan_result}\n")
 
@@ -398,9 +457,10 @@ class HarvesterApp(QWidget):
             self.scan_button.setEnabled(True)
             self.stop_scan_button.setEnabled(False)
             self.progress_bar.setVisible(False)
+            self.progress_bar.setFormat("") # Reset format progress bar
+
 
     def check_for_updates(self):
-        # ... (méthode check_for_updates inchangée - à implémenter plus tard) ...
         pass
 
 
