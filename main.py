@@ -18,31 +18,35 @@ class ScanThread(QThread):
     def __init__(self, subnet, scan_type, port_range):
         super().__init__()
         self.subnet = subnet
-        self.scan_type = scan_type  
-        self.port_range = port_range 
+        self.scan_type = scan_type  # Type de scan (ex: '-T5')
+        self.port_range = port_range # Plage de ports (ex: '1-1024')
         self._is_running = True
+        self.wan_ping_target = "8.8.8.8" # Cible par défaut pour le ping WAN
 
     def run(self):
         """ Exécute le scan réseau avec les options spécifiées """
         try:
             nm = nmap.PortScanner()
-            arguments = f"{self.scan_type} -p {self.port_range}" 
+            arguments = f"{self.scan_type} -p {self.port_range}" # Combine scan type and port range
             nm.scan(hosts=self.subnet, arguments=arguments)
 
             results = {}
             for host in nm.all_hosts():
                 if not self._is_running:
                     return
-                results[host] = {}  
-                results[host]['ports'] = [] 
+                results[host] = {}  # Change to dict to store more info
+                results[host]['ports'] = [] # Ports list
                 if 'tcp' in nm[host]:
                     for port, details in nm[host]['tcp'].items():
                         if details['state'] == 'open':
                             results[host]['ports'].append(port)
-                
-                lan_latency = self.get_ping_latency(host) 
-                results[host]['lan_latency'] = lan_latency 
-                print(f"DEBUG: ScanThread.run() - Scan results for host {host}: {results[host]}") 
+                # Add LAN ping latency here
+                lan_latency = self.get_ping_latency(host)
+                results[host]['lan_latency'] = lan_latency
+                # Add WAN ping latency (to 8.8.8.8)
+                wan_latency = self.get_ping_latency(self.wan_ping_target) # Ping vers cible WAN
+                results['wan_latency'] = wan_latency # Stocke la latence WAN globale (pas par host)
+                print(f"DEBUG: ScanThread.run() - Scan results for host {host}: {results[host]}") # DEBUG
 
             self.scan_finished.emit(results)
         except nmap.PortScannerError as e:
@@ -65,41 +69,42 @@ class ScanThread(QThread):
 
     def get_ping_latency(self, host):
         """ Mesure la latence ping vers un hôte spécifié - VERSION AMÉLIORÉE DU PARSING"""
-        print(f"DEBUG: get_ping_latency() - Pinging host: {host}") 
+        print(f"DEBUG: get_ping_latency() - Pinging host: {host}") # DEBUG
         try:
-            process = subprocess.Popen(["ping", "-n", "1", "-w", "1000", host], 
+            process = subprocess.Popen(["ping", "-n", "1", "-w", "1000", host],  # -n 1 for 1 packet, -w 1000 timeout 1s
                                      stdout=subprocess.PIPE,
                                      stderr=subprocess.PIPE)
             stdout, stderr = process.communicate()
 
-            print(f"DEBUG: get_ping_latency() - Ping return code: {process.returncode}") 
+            print(f"DEBUG: get_ping_latency() - Ping return code: {process.returncode}") # DEBUG
             if process.returncode == 0:
-                output = stdout.decode('cp1252', errors='ignore') 
-                print(f"DEBUG: get_ping_latency() - Ping stdout: {output}") 
+                output = stdout.decode('cp1252', errors='ignore') # DECODE AVEC CP1252 + ignore errors
+                print(f"DEBUG: get_ping_latency() - Ping stdout: {output}") # DEBUG
 
-               
-                import re  
-                match = re.search(r"temps[=<]?([\d.,]+)\s*ms", output, re.IGNORECASE) 
+                # Parsing AMÉLIORÉ et PLUS ROBUSTE (regex)
+                import re  # Import module regex
+                match = re.search(r"temps[=<]?([\d.,]+)\s*ms", output, re.IGNORECASE) # Recherche flexible "temps=...ms" ou "temps<...ms"
                 if match:
-                    latency_str = match.group(1).replace(",", ".") 
+                    latency_str = match.group(1).replace(",", ".") # Extrait la partie numérique et remplace virgule par point
                     try:
-                        latency = float(latency_str) 
+                        latency = float(latency_str) # Convertit en float
                         latency_ms = f"{latency:.2f} ms"
-                        print(f"DEBUG: get_ping_latency() - Latency parsed (REGEX): {latency_ms}") 
+                        print(f"DEBUG: get_ping_latency() - Latency parsed (REGEX): {latency_ms}") # DEBUG
                         return latency_ms
                     except ValueError as ve:
-                        print(f"DEBUG: get_ping_latency() - ValueError parsing latency (REGEX): {ve}") 
+                        print(f"DEBUG: get_ping_latency() - ValueError parsing latency (REGEX): {ve}") # DEBUG
                         return "N/A"
                 else:
-                    print(f"DEBUG: get_ping_latency() - No latency value found in ping output (REGEX)") 
+                    print(f"DEBUG: get_ping_latency() - No latency value found in ping output (REGEX)") # DEBUG
                     return "N/A"
             else:
-                error_output = stderr.decode('utf-8', errors='ignore') 
-                print(f"DEBUG: get_ping_latency() - Ping failed (return code != 0). Stderr: {error_output}") 
-                return "N/A" 
+                error_output = stderr.decode('utf-8', errors='ignore') # Decode stderr aussi (utf-8 + ignore errors)
+                print(f"DEBUG: get_ping_latency() - Ping failed (return code != 0). Stderr: {error_output}") # DEBUG
+                return "N/A" # Ping failed
         except Exception as e:
-            print(f"DEBUG: get_ping_latency() - Exception during ping execution: {e}") 
-            return "N/A" 
+            print(f"DEBUG: get_ping_latency() - Exception during ping execution: {e}") # DEBUG
+            return "N/A" # Error during ping execution
+
 
 class HarvesterApp(QWidget):
     def __init__(self):
@@ -165,9 +170,9 @@ class HarvesterApp(QWidget):
 
         # Tableau de résultats (remplace QTextEdit)
         self.scan_results_table = QTableWidget()
-        self.scan_results_table.setColumnCount(4) # Hôte, IP, Ports Ouverts, Latency LAN
-        self.scan_results_table.setHorizontalHeaderLabels(["Hôte", "Adresse IP", "Ports Ouverts", "Latence LAN (Ping)"]) # ENLEVE WAN
-        self.scan_results_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch) # Colonnes étirées
+        self.scan_results_table.setColumnCount(5) # MODIFICATION : 5 colonnes maintenant (avec WAN)
+        self.scan_results_table.setHorizontalHeaderLabels(["Hôte", "Adresse IP", "Ports Ouverts", "Latence LAN (Ping)", "Latence WAN (Ping)"]) # MODIFICATION : inclut "Latence WAN (Ping)"
+        self.scan_results_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.layout.addWidget(self.scan_results_table)
 
         # Zone de status et version (en bas)
@@ -335,16 +340,20 @@ class HarvesterApp(QWidget):
             # Afficher l'erreur dans une ligne du tableau (ou une popup, plus pro)
             self.scan_results_table.setRowCount(1)
             self.scan_results_table.setItem(0, 0, QTableWidgetItem("Erreur"))
-            self.scan_results_table.setItem(0, 1, QTableWidgetItem(scan_result['error']))
+            self.scan_results_table.setItem(0, 1, QTableWidgetItem("Erreur"))
             self.scan_results_table.setItem(0, 2, QTableWidgetItem(" ")) # Empty port column
             self.scan_results_table.setItem(0, 3, QTableWidgetItem(" ")) # Empty latency column
+            self.scan_results_table.setItem(0, 4, QTableWidgetItem(" ")) # Empty WAN latency column
 
 
         else:
             self.status_label.setText("Scan terminé. Résultats affichés.")
             row_index = 0
             machine_count = 0
+            wan_latency = scan_result.get('wan_latency', 'N/A') # AJOUTER : Lire la latence WAN depuis scan_result
             for host, data in scan_result.items(): # Iterate through data dict
+                if host == 'wan_latency': # AJOUTER : Skip wan_latency entry, it's general info
+                    continue
                 ports = data.get('ports', []) # Get ports, default to empty list
                 lan_latency = data.get('lan_latency', 'N/A') # Get LAN latency, default to 'N/A'
                 self.scan_results_table.insertRow(row_index)
@@ -361,7 +370,8 @@ class HarvesterApp(QWidget):
                 self.scan_results_table.setItem(row_index, 1, QTableWidgetItem(host)) # IP
                 ports_str = ", ".join(map(str, ports)) if ports else "Aucun port ouvert"
                 self.scan_results_table.setItem(row_index, 2, QTableWidgetItem(ports_str)) # Ports
-                self.scan_results_table.setItem(row_index, 3, QTableWidgetItem(lan_latency)) # Latency LAN
+                self.scan_results_table.setItem(row_index, 3, QTableWidgetItem(lan_latency))
+                self.scan_results_table.setItem(row_index, 4, QTableWidgetItem(wan_latency)) # Latency WAN (same for all hosts for now)
                 row_index += 1
                 machine_count += 1
 
@@ -412,13 +422,14 @@ class HarvesterApp(QWidget):
             if file_path.endswith('.csv'):
                 with open(file_path, 'w', newline='') as f:
                     writer = csv.writer(f)
-                    writer.writerow(['Host', 'IP Address', 'Open Ports', 'Latency LAN']) # ENLEVE WAN
+                    writer.writerow(['Host', 'IP Address', 'Open Ports', 'Latency LAN', 'Latency WAN']) # ENLEVE WAN
                     for row in range(self.scan_results_table.rowCount()):
                         host = self.scan_results_table.item(row, 0).text()
                         ip = self.scan_results_table.item(row, 1).text()
                         ports = self.scan_results_table.item(row, 2).text()
                         lan_latency = self.scan_results_table.item(row, 3).text() # Get latency from table
-                        writer.writerow([host, ip, ports, lan_latency]) # Write latency to CSV
+                        wan_latency = self.scan_results_table.item(row, 4).text()
+                        writer.writerow([host, ip, ports, lan_latency, wan_latency]) # Write latency to CSV
             else: # Pour .txt, exporter le contenu du tableau (plus propre que QTextEdit)
                 with open(file_path, 'w') as f:
                     f.write("Scan Results:\n\n")

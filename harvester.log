@@ -40,3 +40,5 @@ Scan result: {'192.168.1.150': {'ports': [], 'lan_latency': '64.00 ms'}, '192.16
 Scan result: {'192.168.1.254': {'ports': [53, 80, 443, 445, 554], 'lan_latency': '30.00 ms'}, '192.168.1.39': {'ports': [], 'lan_latency': '53.00 ms'}, '192.168.1.90': {'ports': [135, 139, 445, 902, 912], 'lan_latency': '1.00 ms'}}
 
 Scan result: {'192.168.1.254': {'ports': [53, 80, 443, 445, 554], 'lan_latency': '4.00 ms'}, '192.168.1.39': {'ports': [], 'lan_latency': '87.00 ms'}, '192.168.1.90': {'ports': [135, 139, 445, 902, 912], 'lan_latency': '1.00 ms'}}
+
+Scan result: {'192.168.1.150': {'ports': [], 'lan_latency': '74.00 ms'}, 'wan_latency': '18.00 ms', '192.168.1.254': {'ports': [53, 80, 443, 445, 554], 'lan_latency': '4.00 ms'}, '192.168.1.90': {'ports': [135, 139, 445, 902, 912], 'lan_latency': '1.00 ms'}}
