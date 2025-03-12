@@ -1,6 +1,7 @@
 import sys
 import socket
 import nmap
+import psutil # <-- Importer psutil
 import json
 import os
 import csv
@@ -37,15 +38,28 @@ class ScanThread(QThread):
                 results[host] = {}  # Change to dict to store more info
                 results[host]['ports'] = [] # Ports list
                 if 'tcp' in nm[host]:
+                    # MODIFICATION : Boucle sur les ports TCP
                     for port, details in nm[host]['tcp'].items():
                         if details['state'] == 'open':
                             results[host]['ports'].append(port)
+                if 'udp' in nm[host]: # AJOUTER : Gestion des ports UDP
+                    results[host]['udp_ports'] = nm[host]['udp'] # Stocker les détails des ports UDP
                 # Add LAN ping latency here
                 lan_latency = self.get_ping_latency(host)
                 results[host]['lan_latency'] = lan_latency
                 # Add WAN ping latency (to 8.8.8.8)
                 wan_latency = self.get_ping_latency(self.wan_ping_target) # Ping vers cible WAN
                 results['wan_latency'] = wan_latency # Stocke la latence WAN globale (pas par host)
+
+                # AJOUTER : Collecter l'utilisation des ressources système
+                resource_data = {
+                    'cpu_percent': psutil.cpu_percent(),
+                    'memory_percent': psutil.virtual_memory().percent,
+                    'disk_usage_percent': psutil.disk_usage('/').percent # Racine du disque
+                }
+                results['resource_usage'] = resource_data  # Stocker les données de ressources
+                print(f"DEBUG: ScanThread.run() - Resource usage data: {resource_data}") # DEBUG
+
                 print(f"DEBUG: ScanThread.run() - Scan results for host {host}: {results[host]}") # DEBUG
 
             self.scan_finished.emit(results)
@@ -54,7 +68,7 @@ class ScanThread(QThread):
             print(f"DEBUG: ScanThread.run() - NmapError: {error_msg}") # DEBUG
             self.scan_finished.emit({'error': error_msg})
         except PermissionError as e:
-            error_msg = f"Permission error: {str(e)}"
+            error_msg = f"Permission error (Nmap? Ping?): {str(e)}" # Message plus précis
             print(f"DEBUG: ScanThread.run() - PermissionError: {error_msg}") # DEBUG
             self.scan_finished.emit({'error': error_msg})
         except Exception as e:
@@ -148,9 +162,9 @@ class HarvesterApp(QWidget):
         self.scan_type_label = QLabel("Type de scan:")
         self.scan_type_combo = QComboBox()
         self.scan_type_combo.addItem("-T5 (Rapide)", "-T5") # Vitesse rapide
-        self.scan_type_combo.addItem("-T4 (Modéré)", "-T4")
+        self.scan_type_combo.addItem("-sT (TCP Connect)", "-sT") # TCP Connect Scan  <--- AJOUTER ICI
+        self.scan_type_combo.addItem("-sU (UDP Scan)", "-sU")     # UDP Scan        <--- AJOUTER ICI
         self.scan_type_combo.addItem("-sS (SYN Scan)", "-sS") # SYN scan (furtif, root)
-        self.scan_type_combo.addItem("-sU (UDP Scan)", "-sU") # UDP scan
         self.scan_type_combo.setCurrentIndex(0) # Rapide par défaut
 
         self.port_range_label = QLabel("Plage de ports:")
@@ -354,13 +368,16 @@ class HarvesterApp(QWidget):
             for host, data in scan_result.items(): # Iterate through data dict
                 if host == 'wan_latency': # AJOUTER : Skip wan_latency entry, it's general info
                     continue
+
                 ports = data.get('ports', []) # Get ports, default to empty list
+                udp_ports_data = data.get('udp_ports', {}) # AJOUTER : Récupérer les données des ports UDP
                 lan_latency = data.get('lan_latency', 'N/A') # Get LAN latency, default to 'N/A'
                 self.scan_results_table.insertRow(row_index)
                 hostname = "Nom inconnu"  # Nom par défaut en cas d'échec
+
                 if host != '127.0.0.1': # Ne pas tenter la résolution pour localhost (inutile)
                     try:
-                        hostname = socket.gethostbyaddr(host)[0]
+                        hostname = socket.gethostbyaddr(host)[0] # NORMAL RESOLUTION
                     except socket.herror:
                         hostname = "Nom inconnu" # Garder le nom par défaut en cas d'erreur
                     except Exception as e: # Capture d'autres erreurs possibles (plus rare)
@@ -368,8 +385,17 @@ class HarvesterApp(QWidget):
 
                 self.scan_results_table.setItem(row_index, 0, QTableWidgetItem(hostname)) # Nom d'hôte (résolution ou "Nom inconnu")
                 self.scan_results_table.setItem(row_index, 1, QTableWidgetItem(host)) # IP
+
+                # MODIFICATION : Affichage des ports TCP (comme avant)
                 ports_str = ", ".join(map(str, ports)) if ports else "Aucun port ouvert"
                 self.scan_results_table.setItem(row_index, 2, QTableWidgetItem(ports_str)) # Ports
+
+                # AJOUTER : Affichage des ports UDP (nouveau) - CONCATÉNER AVEC LES PORTS TCP
+                udp_ports_list = [f"{port} ({details['state']})" for port, details in udp_ports_data.items()] # Formatter UDP
+                udp_ports_str = ", ".join(map(str, udp_ports_list)) if udp_ports_list else "" # Convertir en string
+                if udp_ports_str: # Ajouter les ports UDP à la string des ports TCP (si UDP et TCP)
+                    ports_str += "\nUDP: " + udp_ports_str
+                self.scan_results_table.setItem(row_index, 2, QTableWidgetItem(ports_str)) # Met à jour la colonne Ports avec TCP + UDP
                 self.scan_results_table.setItem(row_index, 3, QTableWidgetItem(lan_latency))
                 self.scan_results_table.setItem(row_index, 4, QTableWidgetItem(wan_latency)) # Latency WAN (same for all hosts for now)
                 row_index += 1
@@ -393,7 +419,8 @@ class HarvesterApp(QWidget):
         data = {
             "ip_address": ip_address,
             "hostname": hostname,
-            "last_scan": json.dumps(last_scan)
+            "last_scan": json.dumps(last_scan),
+            "resource_usage": json.dumps(last_scan.get('resource_usage')) # AJOUTER : Envoyer resource_usage
         }
         try:
             response = requests.post(url, json=data)

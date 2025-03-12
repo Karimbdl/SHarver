@@ -617,5 +617,79 @@
             ],
             "lan_latency": "1.00 ms"
         }
+    },
+    {
+        "10.250.51.10": {
+            "ports": [
+                53
+            ],
+            "lan_latency": "N/A"
+        },
+        "wan_latency": "23.00 ms",
+        "10.250.51.254": {
+            "ports": [
+                53
+            ],
+            "lan_latency": "N/A"
+        },
+        "10.250.51.49": {
+            "ports": [
+                135,
+                139,
+                445,
+                902,
+                912
+            ],
+            "lan_latency": "1.00 ms"
+        }
+    },
+    {
+        "10.250.51.10": {
+            "ports": [
+                53
+            ],
+            "lan_latency": "N/A"
+        },
+        "wan_latency": "22.00 ms",
+        "10.250.51.254": {
+            "ports": [
+                53
+            ],
+            "lan_latency": "N/A"
+        },
+        "10.250.51.49": {
+            "ports": [
+                135,
+                139,
+                445,
+                902,
+                912
+            ],
+            "lan_latency": "1.00 ms"
+        }
+    },
+    {
+        "10.250.51.10": {
+            "ports": [
+                53
+            ],
+            "lan_latency": "N/A"
+        },
+        "wan_latency": "30.00 ms",
+        "resource_usage": {
+            "cpu_percent": 12.5,
+            "memory_percent": 69.7,
+            "disk_usage_percent": 50.6
+        },
+        "10.250.51.49": {
+            "ports": [
+                135,
+                139,
+                445,
+                902,
+                912
+            ],
+            "lan_latency": "1.00 ms"
+        }
     }
 ]
