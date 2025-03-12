@@ -1,7 +1,0 @@
-Scan Results:
-
-Host		IP Address		Open Ports		Latency LAN (Ping)
---------------------------------------------------------------------------------
-Nom inconnu		192.168.1.254		53, 80, 443, 445, 554		4.00 ms
-Nom inconnu		192.168.1.39		Aucun port ouvert		87.00 ms
-karim		192.168.1.90		135, 139, 445, 902, 912		1.00 ms
