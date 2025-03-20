@@ -406,29 +406,51 @@ class HarvesterApp(QWidget):
             self.save_scan_results(scan_result)
             self.log_scan(scan_result)
 
+            # --- NOUVEAU : Formatter les données pour correspondre à l'attente du serveur ---
+            formatted_scan_data = {}
+            for host, data in scan_result.items():
+                if host == 'wan_latency' or host == 'resource_usage': # Ignorer les entrées globales
+                    continue
+                formatted_scan_data[host] = data.get('ports', []) # Prend juste la liste des ports TCP
+
             ip_address = self.local_ip
             hostname = socket.gethostname()
-            self.send_data_to_nester(ip_address, hostname, scan_result)
+            self.send_data_to_nester(ip_address, hostname, formatted_scan_data, scan_result=scan_result) # <--- CORRIGÉ : AJOUTER scan_result EN ARGUMENT DE L'APPEL
+            # --- FIN NOUVEAU FORMATAGE ---
 
         self.scan_button.setEnabled(True)
-        self.status_label.setText(self.status_label.text() + " Données exportées.") # Confirmation export
+        self.status_label.setText(self.status_label.text() + " Données exportées.") # Confirmation export    # Confirmation export
 
 
-    def send_data_to_nester(self, ip_address, hostname, last_scan): # <---- CORRECTED DEFINITION - Accepts arguments
+    def send_data_to_nester(self, ip_address, hostname, last_scan,scan_result): # <---- CORRECTED DEFINITION - Accepts arguments
         url = "http://127.0.0.1:5000/api/sonde"
+
+        # --- MODIFICATION IMPORTANTE : Envoie resource_usage DIRECTEMENT depuis scan_result ---
+        resource_usage_data = scan_result.get('resource_usage') # Récupère resource_usage DIRECTEMENT
         data = {
             "ip_address": ip_address,
             "hostname": hostname,
-            "last_scan": json.dumps(last_scan),
-            "resource_usage": json.dumps(last_scan.get('resource_usage')) # AJOUTER : Envoyer resource_usage
+            "last_scan": json.dumps(last_scan), # <---- JSON DUMP ICI
+            "resource_usage": json.dumps(resource_usage_data) if resource_usage_data else None # <--- MODIFICATION : Condition pour éviter "null" string
         }
+        # --- FIN MODIFICATION IMPORTANTE ---
+
+
+        # --- DEBUG CLIENT : Données JSON envoyées à Nester (garde les logs pour vérifier) ---
+        print("\n--- DEBUG CLIENT : Données JSON envoyées à Nester ---") # Ajout d'un séparateur
+        print(f"URL: {url}") # Affiche l'URL
+        print(f"Data (type: {type(data)}): {data}") # Affiche le dictionnaire 'data' AVANT json.dumps
+        print(f"Data JSON (type: {type(json.dumps(data))}): {json.dumps(data)}") # Affiche le JSON qui va être envoyé
+        print("\n--- DEBUG CLIENT : Fin des données JSON ---") # Fin du bloc de debug
+        # --- FIN DEBUG CLIENT ---
+
+
         try:
             response = requests.post(url, json=data)
             response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
             print("Data sent to Nester successfully:", response.json())
         except requests.exceptions.RequestException as e:
             print(f"Failed to send data to Nester: {e}")
-
 
     def save_scan_results(self, scan_result):
         filename = "scan_results.json"

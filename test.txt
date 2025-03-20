@@ -1,0 +1,8 @@
+Scan Results:
+
+Host		IP Address		Open Ports		Latency LAN (Ping)
+--------------------------------------------------------------------------------
+Nom inconnu		192.168.1.254		53, 80, 443, 445, 554		3.00 ms
+Erreur nom ([Errno 11001] getaddrinfo failed)		resource_usage		Aucun port ouvert		N/A
+Nom inconnu		192.168.1.6		Aucun port ouvert		N/A
+karim		192.168.1.90		135, 139, 445, 902, 912		1.00 ms
